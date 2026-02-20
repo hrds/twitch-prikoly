@@ -1,0 +1,142 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 230 28% 6%;
+    --foreground: 210 40% 98%;
+    --card: 230 32% 8%;
+    --card-foreground: 210 40% 98%;
+    --popover: 230 30% 8%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 190 95% 60%;
+    --primary-foreground: 230 30% 10%;
+    --secondary: 270 80% 66%;
+    --secondary-foreground: 230 30% 10%;
+    --muted: 230 20% 18%;
+    --muted-foreground: 215 16% 72%;
+    --accent: 318 84% 65%;
+    --accent-foreground: 230 30% 10%;
+    --destructive: 0 85% 58%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 230 30% 18%;
+    --input: 230 30% 18%;
+    --ring: 190 95% 60%;
+    --radius: 14px;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: "Space Grotesk", "Sora", sans-serif;
+    color: hsl(var(--foreground));
+    background: transparent;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+}
+
+@layer components {
+  .overlay-shell {
+    @apply relative min-h-screen w-full overflow-hidden border border-white/10 bg-slate-950/70 p-3 text-foreground shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl;
+  }
+
+  .overlay-shell::before {
+    content: "";
+    position: absolute;
+    inset: -40% -20% auto -20%;
+    height: 60%;
+    background: radial-gradient(circle at top, rgba(108, 240, 255, 0.35), transparent 60%);
+    opacity: 0.8;
+    pointer-events: none;
+  }
+
+  .overlay-shell::after {
+    content: "";
+    position: absolute;
+    inset: auto -20% -30% -20%;
+    height: 50%;
+    background: radial-gradient(circle at bottom, rgba(199, 129, 255, 0.28), transparent 65%);
+    opacity: 0.9;
+    pointer-events: none;
+  }
+
+  .neon-orb {
+    position: absolute;
+    width: 220px;
+    height: 220px;
+    border-radius: 999px;
+    filter: blur(0px);
+    background: radial-gradient(circle, rgba(120, 255, 214, 0.5), transparent 60%);
+    opacity: 0.6;
+    animation: float-slow 6s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  .neon-orb.orb-right {
+    right: -60px;
+    top: 80px;
+    background: radial-gradient(circle, rgba(255, 120, 232, 0.55), transparent 60%);
+    animation-delay: -2s;
+  }
+
+  .dragbar {
+    @apply relative z-10 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white/90 shadow-[0_10px_25px_rgba(0,0,0,0.35)];
+  }
+
+  .dragbar::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(103, 232, 249, 0.18), rgba(167, 139, 250, 0.08));
+    opacity: 0.65;
+    pointer-events: none;
+  }
+
+  .dragbar-title {
+    @apply relative z-10 flex items-center gap-2;
+  }
+
+  .status-pill {
+    @apply inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.2em];
+  }
+
+  .status-pill.unlocked {
+    @apply border-emerald-300/40 bg-emerald-500/15 text-emerald-100 shadow-[0_0_18px_rgba(16,185,129,0.25)];
+  }
+
+  .status-pill.locked {
+    @apply border-rose-300/40 bg-rose-500/15 text-rose-100 shadow-[0_0_18px_rgba(244,63,94,0.25)];
+  }
+
+  .hint-banner {
+    @apply relative z-10 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80 shadow-[0_8px_20px_rgba(0,0,0,0.35)];
+  }
+
+  .chat-card {
+    @apply relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm shadow-[0_10px_30px_rgba(0,0,0,0.35)];
+  }
+
+  .chat-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, rgba(64, 222, 255, 0.08), transparent 40%, rgba(168, 85, 247, 0.08));
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  .chat-username {
+    @apply font-semibold text-white;
+  }
+}

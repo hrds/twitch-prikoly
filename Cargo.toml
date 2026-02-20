@@ -1,7 +1,0 @@
-[package]
-name = "twp"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-tauri-plugin-mcp-bridge = "0.8.3"

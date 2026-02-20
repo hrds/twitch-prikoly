@@ -4,30 +4,30 @@ fn set_overlay_locked(window: tauri::WebviewWindow, locked: bool) -> Result<(), 
     {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,
-            SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_LAYERED,
+            GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_EXSTYLE, HWND_NOTOPMOST,
+            HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_LAYERED,
             WS_EX_TRANSPARENT,
         };
 
         let hwnd = window.hwnd().map_err(|err| err.to_string())?;
         let hwnd_ptr = hwnd.0 as HWND;
 
-        // SAFETY: hwnd_ptr comes from Tauri for a live window handle owned by this process.
         let ex_style = unsafe { GetWindowLongW(hwnd_ptr, GWL_EXSTYLE) } as u32;
-        let mut new_style = ex_style | WS_EX_LAYERED;
 
-        if locked {
-            new_style |= WS_EX_TRANSPARENT;
+        let (new_style, z_order) = if locked {
+            (ex_style | WS_EX_LAYERED | WS_EX_TRANSPARENT, HWND_TOPMOST)
         } else {
-            new_style &= !WS_EX_TRANSPARENT;
-        }
+            (
+                ex_style & !(WS_EX_LAYERED | WS_EX_TRANSPARENT),
+                HWND_NOTOPMOST,
+            )
+        };
 
-        // SAFETY: style updates are applied to the same valid HWND and then refreshed with SetWindowPos.
         unsafe {
             SetWindowLongW(hwnd_ptr, GWL_EXSTYLE, new_style as i32);
             SetWindowPos(
                 hwnd_ptr,
-                HWND_TOPMOST,
+                z_order,
                 0,
                 0,
                 0,
