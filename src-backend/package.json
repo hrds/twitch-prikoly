@@ -1,0 +1,16 @@
+{
+  "name": "src-backend",
+  "scripts": {
+    "dev": "bun run --hot src/index.ts",
+    "build:sidecar": "bun run scripts/build-sidecar.ts",
+    "build:sidecar:matrix": "bun run scripts/build-sidecar.ts --matrix"
+  },
+  "dependencies": {
+    "@twurple/auth": "^8.0.3",
+    "@twurple/chat": "^8.0.3",
+    "hono": "^4.12.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

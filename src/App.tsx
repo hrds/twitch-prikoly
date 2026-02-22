@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { LockIcon } from "@/components/ui/lock";
 import { LockOpenIcon } from "@/components/ui/lock-open";
 import { Toggle } from "@/components/ui/toggle";
+import { ensureSidecarReady } from "@/lib/sidecar";
 import { cn } from "@/lib/utils";
 
 type ChatMessage = {
@@ -29,11 +30,15 @@ const isTauriRuntime =
 type WindowState = {
   isLocked: boolean;
   isReady: boolean;
+  isBackendReady: boolean;
+  backendGreeting: string | null;
 };
 
 type WindowAction =
   | { type: "SET_LOCKED"; payload: boolean }
-  | { type: "SET_READY"; payload: boolean };
+  | { type: "SET_READY"; payload: boolean }
+  | { type: "SET_BACKEND_READY"; payload: boolean }
+  | { type: "SET_BACKEND_GREETING"; payload: string | null };
 
 function windowReducer(state: WindowState, action: WindowAction): WindowState {
   switch (action.type) {
@@ -41,6 +46,10 @@ function windowReducer(state: WindowState, action: WindowAction): WindowState {
       return { ...state, isLocked: action.payload };
     case "SET_READY":
       return { ...state, isReady: action.payload };
+    case "SET_BACKEND_READY":
+      return { ...state, isBackendReady: action.payload };
+    case "SET_BACKEND_GREETING":
+      return { ...state, backendGreeting: action.payload };
     default:
       return state;
   }
@@ -69,7 +78,11 @@ function TopBar({ isLocked, onToggleLock }: TopBarProps) {
         }}
       >
         {isLocked ? (
-          <LockIcon aria-hidden="true" className="pointer-events-none" size={16} />
+          <LockIcon
+            aria-hidden="true"
+            className="pointer-events-none"
+            size={16}
+          />
         ) : (
           <LockOpenIcon
             aria-hidden="true"
@@ -77,7 +90,9 @@ function TopBar({ isLocked, onToggleLock }: TopBarProps) {
             size={16}
           />
         )}
-        <span className="sr-only">{isLocked ? "Unlock overlay" : "Lock overlay"}</span>
+        <span className="sr-only">
+          {isLocked ? "Unlock overlay" : "Lock overlay"}
+        </span>
       </Toggle>
     </div>
   );
@@ -106,6 +121,8 @@ function App() {
   const [state, dispatch] = useReducer(windowReducer, {
     isLocked: false,
     isReady: false,
+    isBackendReady: !isTauriRuntime,
+    backendGreeting: null,
   });
 
   const appWindowRef = useRef<ReturnType<typeof getCurrentWindow> | null>(null);
@@ -158,13 +175,51 @@ function App() {
         }
 
         const storedLockState = await settingsStore.get<boolean>("isLocked");
+        console.log(abortController.signal);
         if (abortController.signal.aborted) {
           return;
         }
 
         await applyLockState(storedLockState ?? false, false);
+
+        dispatch({ type: "SET_READY", payload: true });
+        console.log(abortController.signal);
+
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        await ensureSidecarReady();
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        dispatch({ type: "SET_BACKEND_READY", payload: true });
+
+        try {
+          const helloResponse = await fetch("http://127.0.0.1:3187/hello");
+          if (helloResponse.ok) {
+            const helloData = (await helloResponse.json()) as {
+              message?: string;
+            };
+            dispatch({
+              type: "SET_BACKEND_GREETING",
+              payload: helloData.message ?? "Hello from sidecar",
+            });
+          } else {
+            dispatch({ type: "SET_BACKEND_GREETING", payload: null });
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          console.warn("Failed to load sidecar greeting", message, error);
+          dispatch({ type: "SET_BACKEND_GREETING", payload: null });
+        }
       } catch (error) {
-        console.error("Failed to initialize overlay window", error);
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("Failed to initialize overlay window", message, error);
+        dispatch({ type: "SET_BACKEND_READY", payload: false });
+        dispatch({ type: "SET_BACKEND_GREETING", payload: null });
       } finally {
         if (!abortController.signal.aborted) {
           dispatch({ type: "SET_READY", payload: true });
@@ -179,6 +234,28 @@ function App() {
     };
   }, [applyLockState]);
 
+  useEffect(() => {
+    if (!isTauriRuntime || state.isBackendReady) {
+      return;
+    }
+
+    const retryTimer = window.setTimeout(() => {
+      void ensureSidecarReady()
+        .then(() => {
+          dispatch({ type: "SET_BACKEND_READY", payload: true });
+        })
+        .catch((error) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          console.error("Sidecar retry failed", message, error);
+        });
+    }, 3000);
+
+    return () => {
+      window.clearTimeout(retryTimer);
+    };
+  }, [state.isBackendReady]);
+
   return (
     <main className={cn("overlay-shell", state.isLocked && "overlay-locked")}>
       <span className="neon-orb" />
@@ -187,19 +264,14 @@ function App() {
       <div className="relative z-10 flex flex-col gap-3">
         <TopBar isLocked={state.isLocked} onToggleLock={handleToggleLock} />
 
-        {state.isLocked && (
+        {!state.isBackendReady && (
           <div className="hint-banner" aria-live="polite">
-            Locked mode enabled: native title bar is hidden
+            Starting sidecar backend...
           </div>
         )}
-        {!state.isLocked && (
+        {state.backendGreeting && (
           <div className="hint-banner" aria-live="polite">
-            Unlocked mode: use native window controls in the title bar
-          </div>
-        )}
-        {!state.isReady && (
-          <div className="hint-banner" aria-live="polite">
-            Loading overlay settings...
+            {state.backendGreeting}
           </div>
         )}
 

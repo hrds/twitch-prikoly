@@ -6,8 +6,9 @@ Guidance for coding agents operating in this repository.
 
 - Stack: Tauri v2 + React 19 + TypeScript + Vite + Tailwind CSS + shadcn/ui.
 - Frontend source: `src/`.
+- Backend source: `src-backend/`.
 - Tauri/Rust source: `src-tauri/`.
-- Package manager: `pnpm`.
+- Package managers: `pnpm` (root app) and `bun` (`src-backend/`).
 - TypeScript is in strict mode (`tsconfig.json`).
 - Path alias: `@/*` -> `src/*`.
 
@@ -21,7 +22,9 @@ Guidance for coding agents operating in this repository.
 ## Install & Setup Commands
 
 - Install JS deps: `pnpm install`
+- Install sidecar deps: `bun install` (run in `src-backend/`)
 - Run web app only: `pnpm dev`
+- Run sidecar backend (dev): `bun run dev` (run in `src-backend/`)
 - Run Tauri desktop app (dev): `pnpm tauri dev`
 - Build web app: `pnpm build`
 - Preview web build: `pnpm preview`
@@ -32,6 +35,7 @@ Guidance for coding agents operating in this repository.
 There is currently no dedicated ESLint or frontend test script in `package.json`.
 
 - Typecheck frontend: `pnpm exec tsc --noEmit`
+- Typecheck sidecar backend: `bunx tsc --noEmit` (run in `src-backend/`)
 - Full frontend build check: `pnpm build`
 - Rust compile check: `cargo check` (run in `src-tauri/`)
 - Rust tests (all): `cargo test` (run in `src-tauri/`)
@@ -56,12 +60,15 @@ If frontend tests are introduced later (Vitest/Jest), add commands here.
 - Tauri config changes in `src-tauri/tauri.conf.json` require full app restart.
 - Capability changes in `src-tauri/capabilities/*.json` require full app restart.
 - Vite HMR does not apply Rust/backend changes; rerun `pnpm tauri dev` when needed.
+- Sidecar code changes in `src-backend/` do not hot-reload inside a packaged Tauri sidecar process.
+- Sidecar binaries for Tauri bundling should be placed under `src-tauri/binaries/` and referenced in `tauri.conf.json` `bundle.externalBin`.
 
 ## Code Organization Conventions
 
 - Keep UI components in `src/components/ui/`.
 - Keep app-level composition/state in `src/App.tsx` unless it grows too large.
 - Keep shared helpers in `src/lib/`.
+- Keep sidecar API/auth/chat code in `src-backend/src/`.
 - Keep Tauri commands in `src-tauri/src/lib.rs` and register via `invoke_handler`.
 
 ## TypeScript Style Guidelines
@@ -117,6 +124,8 @@ If frontend tests are introduced later (Vitest/Jest), add commands here.
 
 - Any `window.*` API used from frontend must have matching capability permissions.
 - When adding new window calls, update `src-tauri/capabilities/default.json`.
+- When adding sidecars, keep `bundle.externalBin` in `src-tauri/tauri.conf.json` and `shell:allow-execute` in `src-tauri/capabilities/default.json` in sync.
+- Sidecar spawn from frontend requires `@tauri-apps/plugin-shell` (JS) and `tauri-plugin-shell` (Rust plugin registration).
 - Keep `invoke` command names and Rust command signatures in sync.
 - Use debug-only MCP Bridge registration pattern already present in Rust.
 
@@ -131,7 +140,9 @@ If frontend tests are introduced later (Vitest/Jest), add commands here.
 
 - Frontend compiles: `pnpm build`
 - Rust compiles when touched: `cargo check` in `src-tauri/`
+- Sidecar typecheck passes when touched: `bunx tsc --noEmit` in `src-backend/`
 - Capabilities updated for any new Tauri API usage.
+- Sidecar permissions/config updated for any new sidecar process usage.
 - No stale imports, dead code, or unused state/action variants.
 - UI behavior validated for locked/unlocked flows.
 

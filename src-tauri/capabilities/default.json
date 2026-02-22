@@ -18,6 +18,16 @@
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-is-maximized",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/twitch-backend",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
   ]
 }
