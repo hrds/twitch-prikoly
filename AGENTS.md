@@ -6,18 +6,12 @@ Guidance for coding agents operating in this repository.
 
 - Stack: Tauri v2 + React 19 + TypeScript + Vite + Tailwind CSS + shadcn/ui.
 - Frontend source: `src/`.
-- Backend source: `src-backend/`.
+- Backend source: `src-backend/` (Bun + Hono + Twurple).
 - Tauri/Rust source: `src-tauri/`.
 - Package managers: `pnpm` (root app) and `bun` (`src-backend/`).
-- TypeScript is in strict mode (`tsconfig.json`).
+- TypeScript is in strict mode with `noUnusedLocals`, `noUnusedParameters`.
 - Path alias: `@/*` -> `src/*`.
 
-## Rule Files (Cursor / Copilot)
-
-- No `.cursor/rules/` directory found.
-- No `.cursorrules` file found.
-- No `.github/copilot-instructions.md` file found.
-- If any of these are added later, treat them as higher-priority project rules.
 
 ## Install & Setup Commands
 
@@ -27,129 +21,120 @@ Guidance for coding agents operating in this repository.
 - Run sidecar backend (dev): `bun run dev` (run in `src-backend/`)
 - Run Tauri desktop app (dev): `pnpm tauri dev`
 - Build web app: `pnpm build`
-- Preview web build: `pnpm preview`
+- Build sidecar binary: `bun run build:sidecar` (run in `src-backend/`)
 - Build desktop app bundle: `pnpm tauri build`
 
 ## Lint / Typecheck / Test Commands
-
-There is currently no dedicated ESLint or frontend test script in `package.json`.
 
 - Typecheck frontend: `pnpm exec tsc --noEmit`
 - Typecheck sidecar backend: `bunx tsc --noEmit` (run in `src-backend/`)
 - Full frontend build check: `pnpm build`
 - Rust compile check: `cargo check` (run in `src-tauri/`)
 - Rust tests (all): `cargo test` (run in `src-tauri/`)
-- Rust single test by name: `cargo test <test_name>`
-- Rust single test by module filter: `cargo test <module_name>::`
+- Rust single test: `cargo test <test_name>` or `cargo test <module>::`
+- Rust test with output: `cargo test <name> -- --nocapture`
 
-Examples:
+No ESLint or frontend test runner configured yet.
 
-- `cargo test set_overlay_locked`
-- `cargo test window_tests::`
+## Code Organization
 
-If frontend tests are introduced later (Vitest/Jest), add commands here.
+- UI components: `src/components/ui/` (shadcn-generated).
+- App-level state: `src/App.tsx`.
+- Shared helpers: `src/lib/`.
+- Sidecar API: `src-backend/src/index.ts`.
+- Tauri commands: `src-tauri/src/lib.rs`, registered via `invoke_handler`.
 
-## Practical "Single Test" Guidance
+## TypeScript Style
 
-- Frontend: no test runner configured yet, so no single-test command exists.
-- Rust: use `cargo test <substring>` to run matching tests only.
-- For noisy output, add `-- --nocapture` to Rust test commands.
-
-## Build/Run Notes for Tauri
-
-- Tauri config changes in `src-tauri/tauri.conf.json` require full app restart.
-- Capability changes in `src-tauri/capabilities/*.json` require full app restart.
-- Vite HMR does not apply Rust/backend changes; rerun `pnpm tauri dev` when needed.
-- Sidecar code changes in `src-backend/` do not hot-reload inside a packaged Tauri sidecar process.
-- Sidecar binaries for Tauri bundling should be placed under `src-tauri/binaries/` and referenced in `tauri.conf.json` `bundle.externalBin`.
-
-## Code Organization Conventions
-
-- Keep UI components in `src/components/ui/`.
-- Keep app-level composition/state in `src/App.tsx` unless it grows too large.
-- Keep shared helpers in `src/lib/`.
-- Keep sidecar API/auth/chat code in `src-backend/src/`.
-- Keep Tauri commands in `src-tauri/src/lib.rs` and register via `invoke_handler`.
-
-## TypeScript Style Guidelines
-
-- Prefer explicit domain types (`type`/`interface`) for state and props.
+- Prefer `type` for simple shapes, `interface` for props/extendable types.
 - Avoid `any`; use concrete types or generics.
-- Keep reducer action types narrow and discriminated.
-- Use `useCallback` for async handlers passed to child components.
-- Use `useRef` for mutable handles (window/store instances).
-- Check nullable refs before use.
-- Use alias imports (`@/...`) for internal modules when practical.
+- Use discriminated unions for reducer actions.
+- Use `useCallback` for async handlers passed to children.
+- Check nullable refs before use (`if (ref.current)`).
+- Use alias imports (`@/...`) for internal modules.
 
-## Imports & Module Conventions
+## Imports Order
 
-- Group imports in this order:
-  1) React / framework
-  2) third-party packages
-  3) local aliased imports (`@/...`)
-- Keep import lists minimal; remove dead imports immediately.
-- Prefer named imports unless default import is standard for the package.
+1. React / framework (`react`, `react-dom`)
+2. Third-party packages (`@tauri-apps/...`, `hono`)
+3. Local aliased imports (`@/...`)
+4. Relative imports (`./foo`)
+
+Remove unused imports immediately—TS strict mode will error.
 
 ## Naming Conventions
 
-- Components: PascalCase (`TopBar`, `ChatPreview`).
-- Hooks/handlers: camelCase (`handleToggleLock`, `applyLockState`).
-- Constants: UPPER_SNAKE_CASE (`SETTINGS_FILE`).
-- Types/interfaces: PascalCase (`WindowState`, `TopBarProps`).
-- Rust commands/functions: snake_case (`set_overlay_locked`).
+- Components: PascalCase (`TopBar`, `ChatPreview`)
+- Hooks/handlers: camelCase (`handleToggleLock`, `ensureSidecarReady`)
+- Constants: UPPER_SNAKE_CASE (`SIDECAR_HEALTH_URL`)
+- Types/interfaces: PascalCase (`ChatMessage`, `TopBarProps`)
+- Rust functions: snake_case (`now_ms`, `run`)
+- File names: match primary export (`sidecar.ts`, `button.tsx`)
 
-## Formatting Conventions
+## Formatting
 
-- Follow existing formatting in touched files.
-- TS/TSX in app code currently uses semicolons; keep consistency per file.
-- shadcn-generated files may use a slightly different style; do not mass-reformat.
+- Follow existing style in touched files.
+- TS/TSX uses semicolons; keep consistency.
+- shadcn files omit semicolons—do not mass-reformat.
 - Keep lines readable; avoid dense nested ternaries.
-- Prefer small, focused components over very long JSX blocks.
 
-## Tailwind / Styling Conventions
+## React / Component Patterns
+
+- Use `React.forwardRef` for reusable UI components (shadcn pattern).
+- Set `displayName` on forwarded components: `Button.displayName = "Button"`.
+- Use `cn()` from `@/lib/utils` for conditional class merging.
+- Prefer small, focused components over long JSX blocks.
+
+## Tailwind / Styling
 
 - Use utility classes in JSX for component-local styling.
-- Keep global/theme styles in `src/index.css` and Tailwind tokens in `tailwind.config.js`.
-- Use `cn(...)` from `src/lib/utils.ts` for conditional classes.
-- Reuse existing visual tokens and spacing patterns before introducing new ones.
+- Theme tokens: `src/index.css` (CSS variables) + `tailwind.config.js`.
+- Reuse existing color tokens (`primary`, `accent`, `destructive`) before adding new ones.
+- Use responsive/variant utilities via `class-variance-authority` for component variants.
 
-## Error Handling & Async Behavior
+## Error Handling & Async
 
-- Wrap Tauri window/plugin calls in `try/catch` when failure is possible.
-- Log actionable errors with context (`console.error("...", error)`).
-- Avoid unhandled promises in event handlers; use `void` where appropriate.
+- Wrap Tauri/invoke calls in `try/catch` when failure is possible.
+- Log errors with context: `console.error("[sidecar]", error)`.
+- Use `void` for fire-and-forget async in handlers: `void onToggleLock()`.
 - Keep state updates deterministic after async operations.
 
 ## Tauri-Specific Guidelines
 
-- Any `window.*` API used from frontend must have matching capability permissions.
-- When adding new window calls, update `src-tauri/capabilities/default.json`.
-- When adding sidecars, keep `bundle.externalBin` in `src-tauri/tauri.conf.json` and `shell:allow-execute` in `src-tauri/capabilities/default.json` in sync.
-- Sidecar spawn from frontend requires `@tauri-apps/plugin-shell` (JS) and `tauri-plugin-shell` (Rust plugin registration).
-- Keep `invoke` command names and Rust command signatures in sync.
-- Use debug-only MCP Bridge registration pattern already present in Rust.
+- Any `window.*` API from frontend requires capability permissions.
+- Update `src-tauri/capabilities/default.json` for new window calls.
+- Sidecar spawn requires `shell:allow-spawn` permission with `sidecar: true`.
+- Keep `tauri.conf.json` `bundle.externalBin` in sync with sidecar binary names.
+- Use `__TAURI_INTERNALS__` to detect Tauri runtime at JS level.
 
-## Rust Guidelines (src-tauri)
+## Rust Guidelines
 
-- Prefer `Result<_, String>` for simple command error surfacing to frontend.
-- Gate platform-specific code with `#[cfg(...)]`.
-- Keep unsafe blocks minimal and directly justified.
-- Use `cargo fmt` style if Rust edits are substantial.
+- Prefer `Result<_, String>` for command errors surfaced to frontend.
+- Gate platform code with `#[cfg(target_os = "windows")]`.
+- Keep `unsafe` blocks minimal and justified.
+- Use `cargo fmt` for substantial Rust edits.
+- Use `Arc<AtomicBool>` for thread-safe state shared across callbacks.
 
-## What To Check Before Finishing a Change
+## Sidecar / Backend Patterns
 
-- Frontend compiles: `pnpm build`
-- Rust compiles when touched: `cargo check` in `src-tauri/`
-- Sidecar typecheck passes when touched: `bunx tsc --noEmit` in `src-backend/`
-- Capabilities updated for any new Tauri API usage.
-- Sidecar permissions/config updated for any new sidecar process usage.
-- No stale imports, dead code, or unused state/action variants.
-- UI behavior validated for locked/unlocked flows.
+- Sidecar runs on `127.0.0.1:3187` by default (configurable via `--port`).
+- Health endpoint: `GET /health` returns `{ ok: true }`.
+- Use `fetch` from frontend to communicate; poll for readiness.
+- Log sidecar output with `[sidecar]` prefix for traceability.
 
-## Agent Workflow Expectations
+## Pre-Commit Checklist
+
+- [ ] `pnpm build` succeeds (frontend compiles)
+- [ ] `cargo check` passes (if Rust touched, run in `src-tauri/`)
+- [ ] `bunx tsc --noEmit` passes (if sidecar touched, run in `src-backend/`)
+- [ ] Capabilities updated for new Tauri API usage
+- [ ] No stale imports or unused variables
+- [ ] Sidecar binary path matches `tauri.conf.json` if new sidecar added
+
+## Agent Workflow
 
 - Make the smallest safe change that solves the issue.
 - Do not rewrite unrelated files.
 - Preserve user-authored local changes.
 - Prefer incremental refactors over broad rewrites.
-- If introducing a new tool (lint/test), update this file with commands.
+- If introducing a new tool (lint/test), update this file.

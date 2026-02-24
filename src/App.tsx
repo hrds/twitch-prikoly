@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LazyStore } from "@tauri-apps/plugin-store";
+import { listen } from "@tauri-apps/api/event";
 import { Card } from "@/components/ui/card";
+import { Toggle } from "@/components/ui/toggle";
 import { LockIcon } from "@/components/ui/lock";
 import { LockOpenIcon } from "@/components/ui/lock-open";
-import { Toggle } from "@/components/ui/toggle";
-import { ensureSidecarReady } from "@/lib/sidecar";
 import { cn } from "@/lib/utils";
 
 type ChatMessage = {
@@ -23,59 +21,29 @@ const fakeMessages: ChatMessage[] = [
   { id: "5", username: "user5", text: "Let's go 🚀" },
 ];
 
-const SETTINGS_FILE = "settings.json";
-const isTauriRuntime =
-  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-
-type WindowState = {
-  isLocked: boolean;
-  isReady: boolean;
-  isBackendReady: boolean;
-  backendGreeting: string | null;
-};
-
-type WindowAction =
-  | { type: "SET_LOCKED"; payload: boolean }
-  | { type: "SET_READY"; payload: boolean }
-  | { type: "SET_BACKEND_READY"; payload: boolean }
-  | { type: "SET_BACKEND_GREETING"; payload: string | null };
-
-function windowReducer(state: WindowState, action: WindowAction): WindowState {
-  switch (action.type) {
-    case "SET_LOCKED":
-      return { ...state, isLocked: action.payload };
-    case "SET_READY":
-      return { ...state, isReady: action.payload };
-    case "SET_BACKEND_READY":
-      return { ...state, isBackendReady: action.payload };
-    case "SET_BACKEND_GREETING":
-      return { ...state, backendGreeting: action.payload };
-    default:
-      return state;
-  }
-}
-
 interface TopBarProps {
   isLocked: boolean;
-  onToggleLock: () => Promise<void>;
+  isBusy: boolean;
+  onToggleLock: () => void;
 }
 
-function TopBar({ isLocked, onToggleLock }: TopBarProps) {
+function TopBar({ isLocked, isBusy, onToggleLock }: TopBarProps) {
   return (
     <div className="dragbar" role="toolbar" aria-label="Overlay controls">
       <div className="dragbar-title">Chat Overlay</div>
+
       <Toggle
         className={cn(
           "h-8 w-8 rounded-full p-0",
           isLocked
             ? "border border-amber-300/40 bg-amber-400/10 text-amber-100 shadow-[0_0_18px_rgba(251,191,36,0.25)] hover:bg-amber-400/20 data-[state=on]:bg-amber-400/15 data-[state=on]:text-amber-100"
             : "border border-emerald-300/30 bg-emerald-400/10 text-emerald-100 shadow-[0_0_18px_rgba(16,185,129,0.25)] hover:bg-emerald-400/20 data-[state=off]:bg-emerald-400/10 data-[state=off]:text-emerald-100",
+          isBusy && "opacity-60 pointer-events-none",
         )}
         aria-label={isLocked ? "Unlock overlay" : "Lock overlay"}
         pressed={isLocked}
-        onPressedChange={() => {
-          void onToggleLock();
-        }}
+        onPressedChange={onToggleLock}
+        disabled={isBusy}
       >
         {isLocked ? (
           <LockIcon
@@ -98,11 +66,7 @@ function TopBar({ isLocked, onToggleLock }: TopBarProps) {
   );
 }
 
-interface ChatPreviewProps {
-  messages: ChatMessage[];
-}
-
-function ChatPreview({ messages }: ChatPreviewProps) {
+function ChatPreview({ messages }: { messages: ChatMessage[] }) {
   return (
     <section className="flex flex-col gap-2" aria-label="Fake chat preview">
       {messages.map((message) => (
@@ -117,168 +81,60 @@ function ChatPreview({ messages }: ChatPreviewProps) {
   );
 }
 
-function App() {
-  const [state, dispatch] = useReducer(windowReducer, {
-    isLocked: false,
-    isReady: false,
-    isBackendReady: !isTauriRuntime,
-    backendGreeting: null,
-  });
-
-  const appWindowRef = useRef<ReturnType<typeof getCurrentWindow> | null>(null);
-  const settingsStoreRef = useRef<LazyStore | null>(null);
-
-  const applyLockState = useCallback(
-    async (nextLocked: boolean, persist: boolean) => {
-      const appWindow = appWindowRef.current;
-      const settingsStore = settingsStoreRef.current;
-      if (!appWindow || !settingsStore) {
-        return;
-      }
-
-      try {
-        await appWindow.setDecorations(!nextLocked);
-        await invoke("set_overlay_locked", { locked: nextLocked });
-
-        dispatch({ type: "SET_LOCKED", payload: nextLocked });
-
-        if (persist) {
-          await settingsStore.set("isLocked", nextLocked);
-          await settingsStore.save();
-        }
-      } catch (error) {
-        console.error("Failed to apply lock state", error);
-      }
-    },
-    [],
-  );
-
-  const handleToggleLock = useCallback(async () => {
-    await applyLockState(!state.isLocked, true);
-  }, [applyLockState, state.isLocked]);
+export default function App() {
+  const [isLocked, setIsLocked] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
 
   useEffect(() => {
-    const abortController = new AbortController();
+    let unlisten: (() => void) | undefined;
 
-    const setup = async () => {
-      try {
-        if (!isTauriRuntime) {
-          return;
-        }
+    void listen<boolean>("overlay-lock-changed", (event) => {
+      setIsLocked(event.payload);
+    }).then((fn) => {
+      unlisten = fn;
+    });
 
-        appWindowRef.current = getCurrentWindow();
-        settingsStoreRef.current = new LazyStore(SETTINGS_FILE);
+    void invoke<boolean>("get_overlay_locked")
+      .then((locked) => setIsLocked(locked))
+      .catch((err) => {
+        console.error("get_overlay_locked failed:", err);
+      });
 
-        const settingsStore = settingsStoreRef.current;
-        if (!settingsStore) {
-          return;
-        }
-
-        const storedLockState = await settingsStore.get<boolean>("isLocked");
-        console.log(abortController.signal);
-        if (abortController.signal.aborted) {
-          return;
-        }
-
-        await applyLockState(storedLockState ?? false, false);
-
-        dispatch({ type: "SET_READY", payload: true });
-        console.log(abortController.signal);
-
-        if (abortController.signal.aborted) {
-          return;
-        }
-
-        await ensureSidecarReady();
-        if (abortController.signal.aborted) {
-          return;
-        }
-
-        dispatch({ type: "SET_BACKEND_READY", payload: true });
-
-        try {
-          const helloResponse = await fetch("http://127.0.0.1:3187/hello");
-          if (helloResponse.ok) {
-            const helloData = (await helloResponse.json()) as {
-              message?: string;
-            };
-            dispatch({
-              type: "SET_BACKEND_GREETING",
-              payload: helloData.message ?? "Hello from sidecar",
-            });
-          } else {
-            dispatch({ type: "SET_BACKEND_GREETING", payload: null });
-          }
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          console.warn("Failed to load sidecar greeting", message, error);
-          dispatch({ type: "SET_BACKEND_GREETING", payload: null });
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error("Failed to initialize overlay window", message, error);
-        dispatch({ type: "SET_BACKEND_READY", payload: false });
-        dispatch({ type: "SET_BACKEND_GREETING", payload: null });
-      } finally {
-        if (!abortController.signal.aborted) {
-          dispatch({ type: "SET_READY", payload: true });
-        }
+    return () => {
+      if (unlisten) {
+        unlisten();
       }
     };
+  }, []);
 
-    void setup();
+  const handleToggleLock = useCallback(() => {
+    if (isBusy) return;
 
-    return () => {
-      abortController.abort();
-    };
-  }, [applyLockState]);
+    setIsBusy(true);
 
-  useEffect(() => {
-    if (!isTauriRuntime || state.isBackendReady) {
-      return;
-    }
-
-    const retryTimer = window.setTimeout(() => {
-      void ensureSidecarReady()
-        .then(() => {
-          dispatch({ type: "SET_BACKEND_READY", payload: true });
-        })
-        .catch((error) => {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          console.error("Sidecar retry failed", message, error);
-        });
-    }, 3000);
-
-    return () => {
-      window.clearTimeout(retryTimer);
-    };
-  }, [state.isBackendReady]);
+    // Backend returns the NEW locked state (bool) from toggle_overlay_lock
+    invoke<boolean>("toggle_overlay_lock")
+      .then((next) => setIsLocked(next))
+      .catch((err) => {
+        console.error("toggle_overlay_lock failed:", err);
+        // Keep UI state as-is if backend failed.
+      })
+      .finally(() => setIsBusy(false));
+  }, [isBusy]);
 
   return (
-    <main className={cn("overlay-shell", state.isLocked && "overlay-locked")}>
+    <main className="overlay-shell">
       <span className="neon-orb" />
       <span className="neon-orb orb-right" />
 
       <div className="relative z-10 flex flex-col gap-3">
-        <TopBar isLocked={state.isLocked} onToggleLock={handleToggleLock} />
-
-        {!state.isBackendReady && (
-          <div className="hint-banner" aria-live="polite">
-            Starting sidecar backend...
-          </div>
-        )}
-        {state.backendGreeting && (
-          <div className="hint-banner" aria-live="polite">
-            {state.backendGreeting}
-          </div>
-        )}
-
+        <TopBar
+          isLocked={isLocked}
+          isBusy={isBusy}
+          onToggleLock={handleToggleLock}
+        />
         <ChatPreview messages={fakeMessages} />
       </div>
     </main>
   );
 }
-
-export default App;
