@@ -1,10 +1,10 @@
-use std::sync::Mutex;
-
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
 
-use crate::OverlayState;
+use crate::AppState;
 
 const TOPMOST_REASSERT_MS: u64 = 1200;
+
+use std::sync::atomic::Ordering;
 
 mod win {
     use windows_sys::Win32::Foundation::HWND;
@@ -100,25 +100,19 @@ pub fn setup_locked_topmost_heartbeat<R: Runtime>(
     use std::{thread, time::Duration};
     use windows_sys::Win32::Foundation::HWND;
 
-    let hwnd_isize: isize = window
+    let hwnd = window
         .hwnd()
         .map_err(|e| format!("failed to get window handle: {e}"))?
-        .0 as isize;
+        .0 as HWND;
 
     thread::spawn(move || loop {
-        let state = app.state::<Mutex<OverlayState>>();
-        let locked = match state.lock() {
-            Ok(st) => st.locked,
-            Err(_) => false,
-        };
-
-        if locked {
-            if let Err(error) = win::ensure_topmost_checked(hwnd_isize as HWND) {
-                eprintln!("[overlay][windows] failed to reassert topmost: {error}");
-            }
+        let state = app.state::<AppState>();
+        if state.locked.load(Ordering::Acquire) {
+            let _ = win::ensure_topmost_checked(hwnd);
+            thread::sleep(Duration::from_millis(TOPMOST_REASSERT_MS));
+        } else {
+            thread::sleep(Duration::from_secs(5));
         }
-
-        thread::sleep(Duration::from_millis(TOPMOST_REASSERT_MS));
     });
 
     Ok(())

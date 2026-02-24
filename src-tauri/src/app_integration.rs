@@ -1,7 +1,7 @@
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-pub fn register_lock_shortcut<R, M, F>(app: &M, on_toggle: F) -> tauri::Result<()>
+pub fn register_shortcuts<R, M, F>(app: &M, on_toggle: F) -> tauri::Result<()>
 where
     R: Runtime,
     M: Manager<R>,
@@ -10,7 +10,7 @@ where
     let ctrl_alt_l_shortcut = Shortcut::new(Some(Modifiers::ALT), Code::KeyL);
 
     app.global_shortcut()
-        .on_shortcut("Ctrl+Alt+L", move |app, _, event| {
+        .on_shortcut(ctrl_alt_l_shortcut, move |app, _, event| {
             if event.state == ShortcutState::Pressed {
                 on_toggle(app);
             }

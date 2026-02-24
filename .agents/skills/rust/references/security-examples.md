@@ -246,27 +246,35 @@ fn generate_reset_token() -> String {
 
 ### A05: Security Misconfiguration
 
-```toml
-# tauri.conf.json - Restrict capabilities
+```jsonc
+// tauri.conf.json (v2) - keep security explicit
 {
-  "tauri": {
+  "app": {
     "security": {
-      "csp": "default-src 'self'; script-src 'self'",
-      "dangerousDisableAssetCspModification": false
-    },
-    "allowlist": {
-      "all": false,  // NEVER enable all
-      "fs": {
-        "scope": ["$APPDATA/*"],  // Restrict to app directory
-        "readFile": true,
-        "writeFile": true
-      },
-      "shell": {
-        "open": false,  // Disable if not needed
-        "execute": false
-      }
+      "csp": "default-src 'self'; script-src 'self'"
     }
   }
+}
+
+// capabilities/default.json (v2) - least privilege permissions
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-always-on-top",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/my-sidecar",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
+  ]
 }
 ```
 

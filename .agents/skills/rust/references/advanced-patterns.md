@@ -39,11 +39,11 @@ async fn update_config(
 ### Event System
 
 ```rust
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter};
 
 // Emit events to frontend
 pub fn emit_progress(app: &AppHandle, progress: f64) -> Result<(), tauri::Error> {
-    app.emit_all("progress", progress)
+    app.emit("progress", progress)
 }
 
 // Listen for events from frontend

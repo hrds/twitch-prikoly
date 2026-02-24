@@ -71,8 +71,8 @@ You are an expert Rust systems programmer specializing in Tauri desktop applicat
 
 | Category | Version | Notes |
 |----------|---------|-------|
-| LTS/Stable | Rust 1.75+ | Minimum for Tauri 2.x |
-| Recommended | Rust 1.82+ | Latest stable with security patches |
+| LTS/Stable | Rust 1.81+ | Minimum to include command injection fixes |
+| Recommended | Latest stable | Keep current with security patches |
 | Tauri | 2.0+ | Use 2.x for new projects |
 | Tokio | 1.35+ | Async runtime |
 
@@ -85,9 +85,14 @@ validator = { version = "0.16", features = ["derive"] }
 ring = "0.17"              # Cryptography
 argon2 = "0.5"             # Password hashing
 dunce = "1.0"              # Safe path canonicalization
+regex = "1"                # Validation patterns
+once_cell = "1"            # Static regex initialization
+```
 
-[dev-dependencies]
-cargo-audit = "0.18"       # Vulnerability scanning
+Tooling (install once):
+
+```bash
+cargo install cargo-audit cargo-careful
 ```
 
 ---
@@ -159,7 +164,12 @@ Validate all Tauri command inputs using the validator crate with custom regex pa
 
 ```rust
 use serde::Deserialize;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use validator::Validate;
+
+static SAFE_STRING_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[a-zA-Z0-9 _.-]+$").expect("valid regex"));
 
 #[derive(Deserialize, Validate)]
 pub struct UserInput {
@@ -191,6 +201,10 @@ pub enum AppError {
     Database(#[from] sqlx::Error),
     #[error("Validation failed: {0}")]
     Validation(String),
+    #[error("Configuration error")]
+    Configuration(String),
+    #[error("Internal error")]
+    Internal(String),
     #[error("Not found")]
     NotFound,
 }
@@ -215,7 +229,7 @@ pub fn safe_path_join(base: &Path, user_input: &str) -> Result<PathBuf, AppError
     let canonical = dunce::canonicalize(base.join(user_input))
         .map_err(|_| AppError::NotFound)?;
     let base_canonical = dunce::canonicalize(base)
-        .map_err(|_| AppError::Internal(anyhow::anyhow!("Invalid base")))?;
+        .map_err(|_| AppError::Internal("Invalid base path".to_string()))?;
 
     if !canonical.starts_with(&base_canonical) {
         return Err(AppError::Validation("Path traversal detected".into()));
@@ -236,12 +250,12 @@ pub fn safe_command(program: &str, args: &[&str]) -> Result<String, AppError> {
     }
 
     let output = Command::new(program).args(args).output()
-        .map_err(|e| AppError::Internal(e.into()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if output.status.success() {
-        String::from_utf8(output.stdout).map_err(|e| AppError::Internal(e.into()))
+        String::from_utf8(output.stdout).map_err(|e| AppError::Internal(e.to_string()))
     } else {
-        Err(AppError::Internal(anyhow::anyhow!("Command failed")))
+        Err(AppError::Internal("Command failed".to_string()))
     }
 }
 ```
@@ -274,7 +288,7 @@ impl AppState {
 
 ## 6. Security Standards
 
-### 5.1 Critical CVEs
+### 6.1 Critical CVEs
 
 | CVE ID | Severity | Description | Mitigation |
 |--------|----------|-------------|------------|
@@ -284,7 +298,7 @@ impl AppState {
 
 > **See `references/security-examples.md` for complete CVE details and mitigation code**
 
-### 5.2 OWASP Top 10 Mapping
+### 6.2 OWASP Top 10 Mapping
 
 | Category | Risk | Key Mitigations |
 |----------|------|-----------------|
@@ -293,7 +307,7 @@ impl AppState {
 | A04 Insecure Design | MEDIUM | Type system to enforce invariants |
 | A06 Vulnerable Components | HIGH | Run cargo-audit regularly |
 
-### 5.3 Input Validation Strategy
+### 6.3 Input Validation Strategy
 
 **Four-layer approach**: Type system newtypes -> Schema validation (serde/validator) -> Business logic -> Output encoding
 
@@ -308,7 +322,7 @@ impl Email {
 }
 ```
 
-### 5.4 Secrets Management
+### 6.4 Secrets Management
 
 ```rust
 // Load from environment or tauri-plugin-store with encryption
@@ -360,16 +374,26 @@ async fn handle_request(data: &[u8]) -> Vec<u8> {
 **Bad**: CPU work on async - **Good**: `spawn_blocking` for CPU-bound
 ```rust
 async fn hash_password(password: String) -> Result<String, AppError> {
+    use argon2::{
+        password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
+        Argon2,
+    };
+
     tokio::task::spawn_blocking(move || {
-        argon2::hash_encoded(password.as_bytes(), &salt, &config)
-            .map_err(|e| AppError::Internal(e.into()))
-    }).await?
+        let salt = SaltString::generate(&mut OsRng);
+        Argon2::default()
+            .hash_password(password.as_bytes(), &salt)
+            .map(|hash| hash.to_string())
+            .map_err(|e| AppError::Internal(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?
 }
 ```
 
 ### Pattern 5: Avoid Allocations in Hot Paths
 
-**Bad**: `println!` allocates - **Good**: `write!` to preallocated buffer
+**Bad**: formatting repeatedly in hot loops - **Good**: `write!` to preallocated buffer
 ```rust
 fn log_metric(buffer: &mut Vec<u8>, name: &str, value: u64) {
     buffer.clear();
@@ -386,8 +410,14 @@ fn log_metric(buffer: &mut Vec<u8>, name: &str, value: u64) {
 
 ```bash
 cargo audit                          # Dependency vulnerabilities
-cargo +nightly careful test          # Memory safety checking
+cargo careful test                   # UB-focused instrumentation checks
 cargo clippy -- -D warnings          # Lint with security warnings
+```
+
+If `cargo` reports unknown subcommands, install tools first:
+
+```bash
+cargo install cargo-audit cargo-careful
 ```
 
 ### Unit Test Pattern
@@ -408,6 +438,29 @@ mod tests {
     fn test_command_allowlist() {
         assert!(safe_command("rm", &["-rf", "/"]).is_err());
         assert!(safe_command("git", &["status"]).is_ok());
+    }
+}
+```
+
+### Repository-Applicable Test Templates
+
+```rust
+#[cfg(test)]
+mod overlay_tests {
+    #[test]
+    fn toggle_lock_transitions() {
+        let mut locked = false;
+        locked = !locked;
+        assert!(locked);
+        locked = !locked;
+        assert!(!locked);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn rejects_null_hwnd_in_guard() {
+        // Validate safe wrapper behavior around native handle checks.
+        // Keep this test at wrapper boundary; Win32 integration belongs in manual/integration tests.
     }
 }
 ```
@@ -468,7 +521,17 @@ Command::new("echo").arg(user_input);
 
 ---
 
-## 11. Summary
+## 11. Repository Profile (This Codebase)
+
+- Tauri app code lives in `src-tauri/` and currently uses Tauri 2 capability-based permissions.
+- Shared overlay state currently uses `std::sync::Mutex<OverlayState>` in `src-tauri/src/lib.rs`.
+- Windows-specific unsafe boundaries are isolated in `src-tauri/src/windows_overlay.rs` with `// SAFETY:` notes.
+- Current command handlers return `Result<_, String>` and emit frontend events for state changes.
+- Prefer incremental hardening in this repository: add tests around pure helper logic first, then add integration coverage.
+
+---
+
+## 12. Summary
 
 Your goal is to create Rust code that is:
 - **Memory Safe**: Leverage the borrow checker, minimize unsafe
